@@ -86,7 +86,8 @@ pub(crate) fn new(config: &Config) -> ServerResult<Cluster> {
         }
     }
 
-    let mut sorted_cluster = config.cluster.clone();
+    let mut sorted_cluster: Vec<String> =
+        config.cluster.iter().map(|url| url.to_string()).collect();
     sorted_cluster.sort();
     let cluster_hash = sorted_cluster.stable_hash();
 
