@@ -63,20 +63,14 @@ impl ClusterImpl {
 }
 
 pub(crate) fn new(config: &Config) -> ServerResult<Cluster> {
-    let local_address = format!("{}:{}", config.host, config.port);
     let mut nodes = vec![];
 
     for node in &config.cluster {
-        if node != &local_address {
-            let (host, port) = node.split_once(':').ok_or(format!(
-                "Invalid cluster node address (must be host:port): {}",
-                node
-            ))?;
-
+        if node != &config.address {
             nodes.push(Arc::new(RwLock::new(ClusterNodeImpl {
-                api: ClusterApi::new(ReqwestClient::new(), host, port.parse()?),
+                api: ClusterApi::new(ReqwestClient::new(), node.as_str()),
                 status: ClusterStatus {
-                    address: node.clone(),
+                    address: node.as_str().to_string(),
                     cluster_hash: 0,
                     leader: false,
                     term: 0,
@@ -92,7 +86,7 @@ pub(crate) fn new(config: &Config) -> ServerResult<Cluster> {
     let cluster_hash = sorted_cluster.stable_hash();
 
     Ok(Cluster::new(ClusterImpl {
-        local_address,
+        local_address: config.address.as_str().to_string(),
         nodes,
         cluster_hash,
         //events: Arc::new(RwLock::new(VecDeque::new())),

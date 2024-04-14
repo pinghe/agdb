@@ -74,7 +74,7 @@ impl TestServerImpl {
 
         for _ in 0..RETRY_ATTEMPS {
             if let Ok(status) = api.status().await {
-                if status == 200 {
+                if status.0 == 200 {
                     return Ok(Self {
                         dir,
                         data_dir,
