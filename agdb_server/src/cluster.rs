@@ -2,33 +2,87 @@ use crate::config::Config;
 use crate::server_error::ServerResult;
 use agdb::StableHash;
 use agdb_api::AgdbApi;
+use agdb_api::ClusterStatus;
 use agdb_api::ReqwestClient;
+use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio::signal;
 use tokio::sync::broadcast;
+use tokio::sync::RwLock;
+use tokio::task::JoinSet;
 
 pub(crate) type Cluster = Arc<ClusterImpl>;
 
 type ClusterApi = AgdbApi<ReqwestClient>;
 
-#[allow(dead_code)]
+pub(crate) struct ClusterNodeImpl {
+    api: ClusterApi,
+    status: ClusterStatus,
+}
+
+type ClusterNode = Arc<RwLock<ClusterNodeImpl>>;
+
+pub(crate) enum ClusterState {
+    Unititialized,
+    Established,
+    Follower,
+    Leader,
+}
+
+pub(crate) enum ClusterEvent {}
+
 pub(crate) struct ClusterImpl {
-    nodes: Vec<ClusterApi>,
-    cluster_hash: u64,
+    local_address: String,
+    nodes: Vec<ClusterNode>,
+    pub(crate) cluster_hash: u64,
+    //events: Arc<RwLock<VecDeque<ClusterEvent>>>,
+}
+
+impl ClusterImpl {
+    pub(crate) fn local_status(&self) -> ClusterStatus {
+        ClusterStatus {
+            address: self.local_address.clone(),
+            cluster_hash: self.cluster_hash,
+            leader: false,
+            term: 0,
+            commit: 0,
+        }
+    }
+
+    pub(crate) async fn statuses(&self) -> Vec<ClusterStatus> {
+        let mut statuses = Vec::with_capacity(self.nodes.len());
+
+        for node in &self.nodes {
+            statuses.push(node.read().await.status.clone());
+        }
+
+        statuses
+    }
 }
 
 pub(crate) fn new(config: &Config) -> ServerResult<Cluster> {
+    let local_address = format!("{}:{}", config.host, config.port);
     let mut nodes = vec![];
 
     for node in &config.cluster {
-        if node != &format!("{}:{}", config.host, config.port) {
+        if node != &local_address {
             let (host, port) = node.split_once(':').ok_or(format!(
                 "Invalid cluster node address (must be host:port): {}",
                 node
             ))?;
-            nodes.push(ClusterApi::new(ReqwestClient::new(), host, port.parse()?));
+
+            nodes.push(Arc::new(RwLock::new(ClusterNodeImpl {
+                api: ClusterApi::new(ReqwestClient::new(), host, port.parse()?),
+                status: ClusterStatus {
+                    address: node.clone(),
+                    cluster_hash: 0,
+                    leader: false,
+                    term: 0,
+                    commit: 0,
+                },
+            })));
         }
     }
 
@@ -37,9 +91,32 @@ pub(crate) fn new(config: &Config) -> ServerResult<Cluster> {
     let cluster_hash = sorted_cluster.stable_hash();
 
     Ok(Cluster::new(ClusterImpl {
+        local_address,
         nodes,
         cluster_hash,
+        //events: Arc::new(RwLock::new(VecDeque::new())),
     }))
+}
+
+pub(crate) async fn cluster_status(cluster: Cluster) -> ServerResult {
+    let mut tasks = JoinSet::new();
+
+    for node in &cluster.nodes {
+        let node = node.clone();
+        tasks.spawn(async move {
+            tracing::info!("Getting cluster status...");
+            let status = node.read().await.api.status().await;
+            tracing::info!("Got status: {:?}", status);
+            if let Ok((_, status)) = status {
+                tracing::info!("Cluster status: {:?}", status[0]);
+                node.write().await.status = status[0].clone();
+            }
+        });
+    }
+
+    while tasks.join_next().await.is_some() {}
+
+    Ok(())
 }
 
 async fn start_cluster(cluster: Cluster, shutdown_signal: Arc<AtomicBool>) -> ServerResult<()> {
@@ -47,9 +124,14 @@ async fn start_cluster(cluster: Cluster, shutdown_signal: Arc<AtomicBool>) -> Se
         return Ok(());
     }
 
+    // let mut state = ClusterState::Unititialized;
+    let init_handle = tokio::spawn(cluster_status(cluster));
+
     while !shutdown_signal.load(Ordering::Relaxed) {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
+
+    init_handle.await??;
 
     Ok(())
 }

@@ -13,9 +13,9 @@ async fn db_cluster_established() -> anyhow::Result<()> {
     let port2 = TestServerImpl::next_port();
     let port3 = TestServerImpl::next_port();
     let cluster = vec![
-        format!("{HOST}:{port1}"),
-        format!("{HOST}:{port2}"),
-        format!("{HOST}:{port3}"),
+        format!("http://{HOST}:{port1}"),
+        format!("http://{HOST}:{port2}"),
+        format!("http://{HOST}:{port3}"),
     ];
 
     let mut config1 = HashMap::<&str, serde_yaml::Value>::new();
@@ -39,13 +39,17 @@ async fn db_cluster_established() -> anyhow::Result<()> {
     let client2 = AgdbApi::new(ReqwestClient::new(), &TestServer::url_base(), server2.port);
     let client3 = AgdbApi::new(ReqwestClient::new(), &TestServer::url_base(), server3.port);
 
-    let status1 = client1.status_cluster().await?;
-    let status2 = client2.status_cluster().await?;
-    let status3 = client3.status_cluster().await?;
+    let mut status1 = client1.status_cluster().await?;
+    let mut status2 = client2.status_cluster().await?;
+    let mut status3 = client3.status_cluster().await?;
 
     assert_eq!(status1.0, 200);
     assert_eq!(status2.0, 200);
     assert_eq!(status3.0, 200);
+
+    status1.1.sort_by(|a, b| a.address.cmp(&b.address));
+    status2.1.sort_by(|a, b| a.address.cmp(&b.address));
+    status3.1.sort_by(|a, b| a.address.cmp(&b.address));
 
     assert_eq!(status1.1, status2.1);
     assert_eq!(status1.1, status3.1);

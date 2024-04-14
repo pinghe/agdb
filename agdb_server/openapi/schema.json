@@ -1802,7 +1802,7 @@
         "type": "object",
         "required": [
           "address",
-          "status",
+          "cluster_hash",
           "leader",
           "term",
           "commit"
@@ -1811,15 +1811,17 @@
           "address": {
             "type": "string"
           },
+          "cluster_hash": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
           "commit": {
             "type": "integer",
             "format": "int64",
             "minimum": 0
           },
           "leader": {
-            "type": "boolean"
-          },
-          "status": {
             "type": "boolean"
           },
           "term": {

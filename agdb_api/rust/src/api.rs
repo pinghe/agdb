@@ -425,12 +425,10 @@ impl<T: HttpClient> AgdbApi<T> {
             .await
     }
 
-    pub async fn status(&self) -> AgdbApiResult<u16> {
-        Ok(self
-            .client
+    pub async fn status(&self) -> AgdbApiResult<(u16, Vec<ClusterStatus>)> {
+        self.client
             .get::<Vec<ClusterStatus>>(&self.url("/status"), &None)
-            .await?
-            .0)
+            .await
     }
 
     pub async fn status_cluster(&self) -> AgdbApiResult<(u16, Vec<ClusterStatus>)> {

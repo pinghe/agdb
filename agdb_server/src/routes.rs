@@ -2,6 +2,8 @@ pub(crate) mod admin;
 pub(crate) mod db;
 pub(crate) mod user;
 
+use crate::cluster;
+use crate::cluster::Cluster;
 use crate::config::Config;
 use crate::server_error::ServerResult;
 use agdb_api::ClusterStatus;
@@ -22,38 +24,17 @@ use axum::Json;
 )]
 pub(crate) async fn status(
     State(config): State<Config>,
+    State(cluster): State<Cluster>,
     Query(status_params): Query<StatusParams>,
 ) -> ServerResult<(StatusCode, Json<Vec<ClusterStatus>>)> {
     let statuses = if status_params.cluster.unwrap_or_default() {
+        cluster::cluster_status(cluster.clone()).await?;
         let mut statuses = Vec::with_capacity(config.cluster.len());
-        let client = reqwest::Client::new();
-        let local_node = format!("{}:{}", config.host, config.port);
-
-        for node in &config.cluster {
-            let status = if node == &local_node {
-                true
-            } else {
-                let url = format!("http://{node}/api/v1/status");
-                let response = client
-                    .get(&url)
-                    .timeout(std::time::Duration::from_secs(1))
-                    .send()
-                    .await;
-                response.is_ok() && response?.status().is_success()
-            };
-
-            statuses.push(ClusterStatus {
-                address: node.clone(),
-                status,
-                leader: false,
-                term: 0,
-                commit: 0,
-            });
-        }
-
+        statuses.push(cluster.local_status());
+        statuses.extend(cluster.statuses().await);
         statuses
     } else {
-        vec![]
+        vec![cluster.local_status()]
     };
 
     Ok((StatusCode::OK, Json(statuses)))

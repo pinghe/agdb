@@ -42,10 +42,10 @@ pub struct ChangePassword {
     pub new_password: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, ToSchema, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema, PartialEq)]
 pub struct ClusterStatus {
     pub address: String,
-    pub status: bool,
+    pub cluster_hash: u64,
     pub leader: bool,
     pub term: u64,
     pub commit: u64,
@@ -206,7 +206,7 @@ mod tests {
             "{:?}",
             ClusterStatus {
                 address: "localhost".to_string(),
-                status: true,
+                cluster_hash: 0,
                 leader: false,
                 term: 0,
                 commit: 0,
