@@ -22,11 +22,15 @@ pub struct AgdbApi<T: HttpClient> {
 
 impl<T: HttpClient> AgdbApi<T> {
     pub fn new(client: T, address: &str) -> Self {
-        let base = if address.starts_with("http") || address.starts_with("https") {
+        let mut base = if address.starts_with("http") || address.starts_with("https") {
             address.to_string()
         } else {
             format!("http://{address}")
         };
+
+        if base.ends_with('/') {
+            base.pop();
+        }
 
         Self {
             client,

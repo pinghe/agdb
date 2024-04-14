@@ -99,11 +99,8 @@ pub(crate) async fn cluster_status(cluster: Cluster) -> ServerResult {
     for node in &cluster.nodes {
         let node = node.clone();
         tasks.spawn(async move {
-            tracing::info!("Getting cluster status...");
             let status = node.read().await.api.status().await;
-            tracing::info!("Got status: {:?}", status);
             if let Ok((_, status)) = status {
-                tracing::info!("Cluster status: {:?}", status[0]);
                 node.write().await.status = status[0].clone();
             }
         });
