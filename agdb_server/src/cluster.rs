@@ -120,7 +120,7 @@ async fn start_cluster(cluster: Cluster, shutdown_signal: Arc<AtomicBool>) -> Se
     let init_handle = tokio::spawn(cluster_status(cluster));
 
     while !shutdown_signal.load(Ordering::Relaxed) {
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
 
     init_handle.await??;
