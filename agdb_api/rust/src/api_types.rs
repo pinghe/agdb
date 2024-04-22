@@ -111,6 +111,7 @@ pub enum Vote {
     Approve,
     ClusterHashMismatch(u64),
     CommitHashMismatch(u64),
+    LogHashMismatch(u64),
     OldCommit(u64),
     AlreadyVoted(u64),
 }

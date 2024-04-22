@@ -65,14 +65,15 @@ struct Database {
 
 #[derive(Clone, Copy, UserValue)]
 pub(crate) struct Cluster {
+    pub(crate) db_id: Option<DbId>,
     pub(crate) term: u64,
     pub(crate) voted: u64,
 }
 
 pub(crate) struct LogInfo {
+    pub(crate) hash: u64,
     pub(crate) commit: u64,
     pub(crate) commit_hash: u64,
-    pub(crate) hash: u64,
 }
 
 pub(crate) struct DbPoolImpl {
@@ -100,13 +101,22 @@ impl DbPool {
                 t.exec_mut(&QueryBuilder::insert().index("username").query())?;
                 t.exec_mut(&QueryBuilder::insert().index("token").query())?;
 
-                let cluster = Cluster { term: 0, voted: 0 };
+                let cluster = Cluster {
+                    db_id: None,
+                    term: 0,
+                    voted: 0,
+                };
 
                 t.exec_mut(
                     &QueryBuilder::insert()
                         .nodes()
                         .aliases(vec!["users", "dbs", "cluster", "log"])
-                        .values(vec![vec![], vec![], cluster.to_db_values(), vec![]])
+                        .values(vec![
+                            vec![],
+                            vec![],
+                            cluster.to_db_values(),
+                            vec![("hash", 0_u64).into()],
+                        ])
                         .query(),
                 )?;
 
@@ -364,15 +374,51 @@ impl DbPool {
     }
 
     pub(crate) async fn log_info(&self) -> ServerResult<LogInfo> {
-        //let commit = self.db().await.exec(&QueryBuilder::select().)
+        let commit = self
+            .db()
+            .await
+            .exec(&QueryBuilder::select().edge_count_from().ids("log").query())?
+            .elements[0]
+            .values[0]
+            .value
+            .to_u64()?;
 
-        let log_info = LogInfo {
-            commit: todo!(),
-            commit_hash: todo!(),
-            hash: todo!(),
+        let hash = self
+            .db()
+            .await
+            .exec(
+                &QueryBuilder::select()
+                    .values(vec!["hash".into()])
+                    .ids("log")
+                    .query(),
+            )?
+            .elements[0]
+            .values[0]
+            .value
+            .to_u64()?;
+
+        let commit_hash = if commit > 0 {
+            self.db()
+                .await
+                .exec(
+                    &QueryBuilder::select()
+                        .values(vec!["hash".into()])
+                        .ids(QueryBuilder::search().from("log").limit(1).query())
+                        .query(),
+                )?
+                .elements[0]
+                .values[0]
+                .value
+                .to_u64()?
+        } else {
+            0
         };
 
-        Ok(log_info)
+        Ok(LogInfo {
+            hash,
+            commit,
+            commit_hash,
+        })
     }
 
     pub(crate) async fn cluster_info(&self) -> ServerResult<Cluster> {
@@ -381,6 +427,13 @@ impl DbPool {
             .await
             .exec(&QueryBuilder::select().ids("cluster").query())?
             .try_into()?)
+    }
+
+    pub(crate) async fn save_cluster_info(&self, cluster: &Cluster) -> ServerResult {
+        self.db_mut()
+            .await
+            .exec_mut(&QueryBuilder::insert().element(cluster).query())?;
+        Ok(())
     }
 
     pub(crate) async fn cluster_token(&self) -> ServerResult<String> {

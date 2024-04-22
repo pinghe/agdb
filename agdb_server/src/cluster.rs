@@ -115,7 +115,11 @@ pub(crate) async fn cluster_status(cluster: Cluster) -> ServerResult {
 
 pub(crate) async fn election(cluster: Cluster, shutdown_signal: Arc<AtomicBool>) -> ServerResult {
     let mut tasks = JoinSet::new();
-    let cluster_info = cluster.db_pool.cluster_info().await?;
+    let mut cluster_info = cluster.db_pool.cluster_info().await?;
+    cluster_info.term += 1;
+    cluster_info.voted = 1;
+    cluster.db_pool.save_cluster_info(&cluster_info).await?;
+    let log_info = cluster.db_pool.log_info().await?;
 
     for node in &cluster.nodes {
         let node = node.clone();
@@ -131,7 +135,13 @@ pub(crate) async fn election(cluster: Cluster, shutdown_signal: Arc<AtomicBool>)
             node.read()
                 .await
                 .api
-                .vote(c.hash, cluster_info.term, 0, 0, 0)
+                .vote(
+                    c.hash,
+                    cluster_info.term,
+                    log_info.hash,
+                    log_info.commit,
+                    log_info.commit_hash,
+                )
                 .await
         });
     }
@@ -145,6 +155,7 @@ pub(crate) async fn election(cluster: Cluster, shutdown_signal: Arc<AtomicBool>)
                     Vote::Approve => {}
                     Vote::ClusterHashMismatch(hash) => {}
                     Vote::CommitHashMismatch(hash) => {}
+                    Vote::LogHashMismatch(hash) => {}
                     Vote::OldCommit(commit) => {}
                     Vote::AlreadyVoted(term) => {}
                 }
