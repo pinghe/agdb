@@ -21,6 +21,7 @@ pub use api_types::StatusParams;
 pub use api_types::UserCredentials;
 pub use api_types::UserLogin;
 pub use api_types::UserStatus;
+pub use api_types::Vote;
 pub use http_client::HttpClient;
 #[cfg(feature = "reqwest")]
 pub use http_client::ReqwestClient;

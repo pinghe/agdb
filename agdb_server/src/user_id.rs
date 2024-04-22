@@ -1,4 +1,3 @@
-use crate::config::Config;
 use crate::db_pool::DbPool;
 use crate::server_error::ServerError;
 use crate::utilities;
@@ -15,7 +14,10 @@ use axum_extra::TypedHeader;
 pub(crate) struct UserId(pub(crate) DbId);
 
 #[allow(dead_code)]
-pub(crate) struct AdminId(pub(crate) DbId);
+pub(crate) struct AdminId();
+
+#[allow(dead_code)]
+pub(crate) struct ClusterUserId();
 
 #[derive(Default)]
 pub(crate) struct UserName(pub(crate) String);
@@ -65,24 +67,46 @@ impl<S: Sync + Send> FromRequestParts<S> for AdminId
 where
     S: Send + Sync,
     DbPool: FromRef<S>,
-    Config: FromRef<S>,
 {
     type Rejection = StatusCode;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let admin_user = Config::from_ref(state).admin.clone();
-        let admin = DbPool::from_ref(state)
-            .find_user(&admin_user)
+        let admin_token = DbPool::from_ref(state)
+            .admin_token()
             .await
             .map_err(unauthorized)?;
         let bearer: TypedHeader<Authorization<Bearer>> =
             parts.extract().await.map_err(unauthorized)?;
 
-        if admin.token != utilities::unquote(bearer.token()) {
+        if admin_token != utilities::unquote(bearer.token()) {
             return Err(unauthorized(()));
         }
 
-        Ok(Self(admin.db_id.unwrap()))
+        Ok(Self())
+    }
+}
+
+#[axum::async_trait]
+impl<S: Sync + Send> FromRequestParts<S> for ClusterUserId
+where
+    S: Send + Sync,
+    DbPool: FromRef<S>,
+{
+    type Rejection = StatusCode;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let user_token = DbPool::from_ref(state)
+            .cluster_token()
+            .await
+            .map_err(unauthorized)?;
+        let bearer: TypedHeader<Authorization<Bearer>> =
+            parts.extract().await.map_err(unauthorized)?;
+
+        if user_token != utilities::unquote(bearer.token()) {
+            return Err(unauthorized(()));
+        }
+
+        Ok(Self())
     }
 }
 

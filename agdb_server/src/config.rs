@@ -1,4 +1,3 @@
-use crate::server_error::ServerError;
 use crate::server_error::ServerResult;
 use serde::Deserialize;
 use serde::Serialize;
@@ -10,34 +9,36 @@ pub(crate) type Config = Arc<ConfigImpl>;
 const CONFIG_FILE: &str = "agdb_server.yaml";
 
 #[derive(Deserialize, Serialize)]
+pub(crate) struct ClusterConfig {
+    pub(crate) local_address: Url,
+    pub(crate) user: String,
+    pub(crate) password: String,
+    pub(crate) nodes: Vec<Url>,
+}
+
+#[derive(Deserialize, Serialize)]
 pub(crate) struct ConfigImpl {
     pub(crate) bind: String,
-    pub(crate) address: Url,
     pub(crate) admin: String,
     pub(crate) data_dir: String,
-    pub(crate) cluster: Vec<Url>,
+    pub(crate) cluster: ClusterConfig,
 }
 
 pub(crate) fn new() -> ServerResult<Config> {
     if let Ok(content) = std::fs::read_to_string(CONFIG_FILE) {
-        let config = Config::new(serde_yaml::from_str(&content)?);
-
-        if !config.cluster.is_empty() && !config.cluster.contains(&config.address) {
-            return Err(ServerError::from(format!(
-                "Cluster does not contain this node: {}",
-                config.address
-            )));
-        }
-
-        return Ok(config);
+        return Ok(Config::new(serde_yaml::from_str(&content)?));
     }
 
     let config = ConfigImpl {
         bind: "0.0.0.0:3000".to_string(),
-        address: Url::parse("localhost:3000")?,
         admin: "admin".to_string(),
         data_dir: "agdb_server_data".to_string(),
-        cluster: vec![],
+        cluster: ClusterConfig {
+            local_address: Url::parse("http://localhost:3000")?,
+            user: "cluster_admin".to_string(),
+            password: "cluster_admin".to_string(),
+            nodes: vec![],
+        },
     };
 
     std::fs::write(CONFIG_FILE, serde_yaml::to_string(&config)?)?;

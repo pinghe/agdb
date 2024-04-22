@@ -63,6 +63,18 @@ struct Database {
     pub(crate) backup: u64,
 }
 
+#[derive(Clone, Copy, UserValue)]
+pub(crate) struct Cluster {
+    pub(crate) term: u64,
+    pub(crate) voted: u64,
+}
+
+pub(crate) struct LogInfo {
+    pub(crate) commit: u64,
+    pub(crate) commit_hash: u64,
+    pub(crate) hash: u64,
+}
+
 pub(crate) struct DbPoolImpl {
     server_db: ServerDb,
     pool: RwLock<HashMap<String, ServerDb>>,
@@ -82,28 +94,43 @@ impl DbPool {
 
         if !db_exists {
             let admin_password = Password::create(&config.admin, &config.admin);
+            let cluster_password = Password::create(&config.cluster.user, &config.cluster.password);
 
             db_pool.0.server_db.get_mut().await.transaction_mut(|t| {
                 t.exec_mut(&QueryBuilder::insert().index("username").query())?;
                 t.exec_mut(&QueryBuilder::insert().index("token").query())?;
 
+                let cluster = Cluster { term: 0, voted: 0 };
+
                 t.exec_mut(
                     &QueryBuilder::insert()
                         .nodes()
-                        .aliases(vec!["users", "dbs"])
+                        .aliases(vec!["users", "dbs", "cluster", "log"])
+                        .values(vec![vec![], vec![], cluster.to_db_values(), vec![]])
                         .query(),
                 )?;
 
-                let admin = t.exec_mut(
+                let admin_user = ServerUser {
+                    db_id: None,
+                    username: config.admin.clone(),
+                    password: admin_password.password.to_vec(),
+                    salt: admin_password.user_salt.to_vec(),
+                    token: String::new(),
+                };
+
+                let cluster_user = ServerUser {
+                    db_id: None,
+                    username: config.cluster.user.clone(),
+                    password: cluster_password.password.to_vec(),
+                    salt: cluster_password.user_salt.to_vec(),
+                    token: String::new(),
+                };
+
+                let admins = t.exec_mut(
                     &QueryBuilder::insert()
                         .nodes()
-                        .values(&ServerUser {
-                            db_id: None,
-                            username: config.admin.clone(),
-                            password: admin_password.password.to_vec(),
-                            salt: admin_password.user_salt.to_vec(),
-                            token: String::new(),
-                        })
+                        .aliases(vec!["admin", "cluster_user"])
+                        .values(&vec![admin_user, cluster_user])
                         .query(),
                 )?;
 
@@ -111,7 +138,7 @@ impl DbPool {
                     &QueryBuilder::insert()
                         .edges()
                         .from("users")
-                        .to(admin)
+                        .to(admins)
                         .query(),
                 )
             })?;
@@ -246,6 +273,22 @@ impl DbPool {
         Ok(())
     }
 
+    pub(crate) async fn admin_token(&self) -> ServerResult<String> {
+        Ok(self
+            .db()
+            .await
+            .exec(
+                &QueryBuilder::select()
+                    .values(vec!["token".into()])
+                    .ids("admin")
+                    .query(),
+            )?
+            .elements[0]
+            .values[0]
+            .value
+            .to_string())
+    }
+
     pub(crate) async fn audit(
         &self,
         owner: &str,
@@ -318,6 +361,42 @@ impl DbPool {
         self.save_user(user).await?;
 
         Ok(())
+    }
+
+    pub(crate) async fn log_info(&self) -> ServerResult<LogInfo> {
+        //let commit = self.db().await.exec(&QueryBuilder::select().)
+
+        let log_info = LogInfo {
+            commit: todo!(),
+            commit_hash: todo!(),
+            hash: todo!(),
+        };
+
+        Ok(log_info)
+    }
+
+    pub(crate) async fn cluster_info(&self) -> ServerResult<Cluster> {
+        Ok(self
+            .db()
+            .await
+            .exec(&QueryBuilder::select().ids("cluster").query())?
+            .try_into()?)
+    }
+
+    pub(crate) async fn cluster_token(&self) -> ServerResult<String> {
+        Ok(self
+            .db()
+            .await
+            .exec(
+                &QueryBuilder::select()
+                    .values(vec!["token".into()])
+                    .ids("cluser_user")
+                    .query(),
+            )?
+            .elements[0]
+            .values[0]
+            .value
+            .to_string())
     }
 
     pub(crate) async fn copy_db(

@@ -1,10 +1,11 @@
 use crate::config::Config;
+use crate::db_pool::DbPool;
 use crate::server_error::ServerResult;
 use agdb::StableHash;
 use agdb_api::AgdbApi;
 use agdb_api::ClusterStatus;
 use agdb_api::ReqwestClient;
-use std::collections::VecDeque;
+use agdb_api::Vote;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -24,27 +25,20 @@ pub(crate) struct ClusterNodeImpl {
 
 type ClusterNode = Arc<RwLock<ClusterNodeImpl>>;
 
-pub(crate) enum ClusterState {
-    Unititialized,
-    Established,
-    Follower,
-    Leader,
-}
-
-pub(crate) enum ClusterEvent {}
-
 pub(crate) struct ClusterImpl {
+    db_pool: DbPool,
     local_address: String,
+    user: String,
+    password: String,
     nodes: Vec<ClusterNode>,
-    pub(crate) cluster_hash: u64,
-    //events: Arc<RwLock<VecDeque<ClusterEvent>>>,
+    hash: u64,
 }
 
 impl ClusterImpl {
     pub(crate) fn local_status(&self) -> ClusterStatus {
         ClusterStatus {
             address: self.local_address.clone(),
-            cluster_hash: self.cluster_hash,
+            cluster_hash: self.hash,
             leader: false,
             term: 0,
             commit: 0,
@@ -62,11 +56,11 @@ impl ClusterImpl {
     }
 }
 
-pub(crate) fn new(config: &Config) -> ServerResult<Cluster> {
+pub(crate) fn new(config: &Config, db_pool: DbPool) -> ServerResult<Cluster> {
     let mut nodes = vec![];
 
-    for node in &config.cluster {
-        if node != &config.address {
+    for node in &config.cluster.nodes {
+        if node != &config.cluster.local_address {
             nodes.push(Arc::new(RwLock::new(ClusterNodeImpl {
                 api: ClusterApi::new(ReqwestClient::new(), node.as_str()),
                 status: ClusterStatus {
@@ -80,16 +74,24 @@ pub(crate) fn new(config: &Config) -> ServerResult<Cluster> {
         }
     }
 
-    let mut sorted_cluster: Vec<String> =
-        config.cluster.iter().map(|url| url.to_string()).collect();
+    let mut sorted_cluster: Vec<String> = config
+        .cluster
+        .nodes
+        .iter()
+        .map(|url| url.to_string())
+        .collect();
+    sorted_cluster.push(config.cluster.local_address.to_string());
     sorted_cluster.sort();
+    tracing::info!("sorted_cluster: {:?}", sorted_cluster);
     let cluster_hash = sorted_cluster.stable_hash();
 
     Ok(Cluster::new(ClusterImpl {
-        local_address: config.address.as_str().to_string(),
+        db_pool,
+        local_address: config.cluster.local_address.as_str().to_string(),
+        user: config.cluster.user.clone(),
+        password: config.cluster.password.clone(),
         nodes,
-        cluster_hash,
-        //events: Arc::new(RwLock::new(VecDeque::new())),
+        hash: cluster_hash,
     }))
 }
 
@@ -111,19 +113,58 @@ pub(crate) async fn cluster_status(cluster: Cluster) -> ServerResult {
     Ok(())
 }
 
-async fn start_cluster(cluster: Cluster, shutdown_signal: Arc<AtomicBool>) -> ServerResult<()> {
+pub(crate) async fn election(cluster: Cluster, shutdown_signal: Arc<AtomicBool>) -> ServerResult {
+    let mut tasks = JoinSet::new();
+    let cluster_info = cluster.db_pool.cluster_info().await?;
+
+    for node in &cluster.nodes {
+        let node = node.clone();
+        let c = cluster.clone();
+
+        tasks.spawn(async move {
+            node.write()
+                .await
+                .api
+                .user_login(&c.user, &c.password)
+                .await?;
+
+            node.read()
+                .await
+                .api
+                .vote(c.hash, cluster_info.term, 0, 0, 0)
+                .await
+        });
+    }
+
+    while !shutdown_signal.load(Ordering::Relaxed) || !tasks.is_empty() {
+        if let Some(vote) = tasks.try_join_next() {
+            let (status, vote) = vote??;
+
+            if status == 200 {
+                match vote {
+                    Vote::Approve => {}
+                    Vote::ClusterHashMismatch(hash) => {}
+                    Vote::CommitHashMismatch(hash) => {}
+                    Vote::OldCommit(commit) => {}
+                    Vote::AlreadyVoted(term) => {}
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_cluster(cluster: Cluster, shutdown_signal: Arc<AtomicBool>) -> ServerResult<()> {
     if cluster.nodes.is_empty() {
         return Ok(());
     }
 
-    // let mut state = ClusterState::Unititialized;
-    let init_handle = tokio::spawn(cluster_status(cluster));
+    election(cluster.clone(), shutdown_signal.clone()).await?;
 
     while !shutdown_signal.load(Ordering::Relaxed) {
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
-
-    init_handle.await??;
 
     Ok(())
 }
@@ -133,7 +174,7 @@ pub(crate) async fn start_with_shutdown(
     mut shutdown_receiver: broadcast::Receiver<()>,
 ) {
     let shutdown_signal = Arc::new(AtomicBool::new(false));
-    let cluster_handle = tokio::spawn(start_cluster(cluster.clone(), shutdown_signal.clone()));
+    let cluster_handle = tokio::spawn(run_cluster(cluster.clone(), shutdown_signal.clone()));
 
     tokio::select! {
         _ = signal::ctrl_c() => {},

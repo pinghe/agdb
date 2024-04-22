@@ -97,6 +97,24 @@ pub struct UserStatus {
     pub name: String,
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct Election {
+    pub cluster_hash: u64,
+    pub term: u64,
+    pub log_hash: u64,
+    pub commit: u64,
+    pub commit_hash: u64,
+}
+
+#[derive(Deserialize, Serialize)]
+pub enum Vote {
+    Approve,
+    ClusterHashMismatch(u64),
+    CommitHashMismatch(u64),
+    OldCommit(u64),
+    AlreadyVoted(u64),
+}
+
 impl From<&str> for DbType {
     fn from(value: &str) -> Self {
         match value {

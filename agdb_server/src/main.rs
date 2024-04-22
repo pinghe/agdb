@@ -23,8 +23,8 @@ async fn main() -> ServerResult {
 
     let (shutdown_sender, shutdown_receiver) = broadcast::channel::<()>(1);
     let config = config::new()?;
-    let cluster = cluster::new(&config)?;
     let db_pool = DbPool::new(&config).await?;
+    let cluster = cluster::new(&config, db_pool.clone())?;
     let app = app::app(
         config.clone(),
         shutdown_sender.clone(),

@@ -1,36 +1,63 @@
+use crate::ClusterConfig;
+use crate::Config;
 use crate::TestServerImpl;
 use crate::ADMIN;
+use crate::CLUSTER_ADMIN;
 use crate::HOST;
 use crate::SERVER_DATA_DIR;
 use agdb_api::AgdbApi;
 use agdb_api::ReqwestClient;
-use std::collections::HashMap;
 
 #[tokio::test]
 async fn db_cluster_established() -> anyhow::Result<()> {
     let port1 = TestServerImpl::next_port();
     let port2 = TestServerImpl::next_port();
     let port3 = TestServerImpl::next_port();
-    let cluster = vec![
-        format!("http://{HOST}:{port1}"),
-        format!("http://{HOST}:{port2}"),
-        format!("http://{HOST}:{port3}"),
-    ];
 
-    let mut config1 = HashMap::<&str, serde_yaml::Value>::new();
-    config1.insert("bind", format!("{HOST}:{port1}").into());
-    config1.insert("address", format!("http://{HOST}:{port1}").into());
-    config1.insert("admin", ADMIN.into());
-    config1.insert("data_dir", SERVER_DATA_DIR.into());
-    config1.insert("cluster", cluster.into());
+    let config1 = Config {
+        bind: format!("{HOST}:{port1}"),
+        admin: ADMIN.into(),
+        data_dir: SERVER_DATA_DIR.into(),
+        cluster: ClusterConfig {
+            local_address: format!("http://{HOST}:{port1}"),
+            user: CLUSTER_ADMIN.into(),
+            password: CLUSTER_ADMIN.into(),
+            nodes: vec![
+                format!("http://{HOST}:{port2}"),
+                format!("http://{HOST}:{port3}"),
+            ],
+        },
+    };
 
-    let mut config2 = config1.clone();
-    config2.insert("bind", format!("{HOST}:{port2}").into());
-    config2.insert("address", format!("http://{HOST}:{port2}").into());
+    let config2 = Config {
+        bind: format!("{HOST}:{port2}"),
+        admin: ADMIN.into(),
+        data_dir: SERVER_DATA_DIR.into(),
+        cluster: ClusterConfig {
+            local_address: format!("http://{HOST}:{port2}"),
+            user: CLUSTER_ADMIN.into(),
+            password: CLUSTER_ADMIN.into(),
+            nodes: vec![
+                format!("http://{HOST}:{port1}"),
+                format!("http://{HOST}:{port3}"),
+            ],
+        },
+    };
 
-    let mut config3 = config1.clone();
-    config3.insert("bind", format!("{HOST}:{port3}").into());
-    config3.insert("address", format!("http://{HOST}:{port3}").into());
+    let config3 = Config {
+        bind: format!("{HOST}:{port3}"),
+        admin: ADMIN.into(),
+        data_dir: SERVER_DATA_DIR.into(),
+        cluster: ClusterConfig {
+            local_address: format!("http://{HOST}:{port3}"),
+            user: CLUSTER_ADMIN.into(),
+            password: CLUSTER_ADMIN.into(),
+            nodes: vec![
+                format!("http://{HOST}:{port1}"),
+                format!("http://{HOST}:{port2}"),
+            ],
+        },
+    };
 
     let server1 = TestServerImpl::with_config(config1).await?;
     let server2 = TestServerImpl::with_config(config2).await?;

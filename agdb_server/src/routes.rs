@@ -4,7 +4,6 @@ pub(crate) mod user;
 
 use crate::cluster;
 use crate::cluster::Cluster;
-use crate::config::Config;
 use crate::server_error::ServerResult;
 use agdb_api::ClusterStatus;
 use agdb_api::StatusParams;
@@ -23,15 +22,15 @@ use axum::Json;
     )
 )]
 pub(crate) async fn status(
-    State(config): State<Config>,
     State(cluster): State<Cluster>,
     Query(status_params): Query<StatusParams>,
 ) -> ServerResult<(StatusCode, Json<Vec<ClusterStatus>>)> {
     let statuses = if status_params.cluster.unwrap_or_default() {
         cluster::cluster_status(cluster.clone()).await?;
-        let mut statuses = Vec::with_capacity(config.cluster.len());
+        let cluster_statuses = cluster.statuses().await;
+        let mut statuses = Vec::with_capacity(cluster_statuses.len() + 1);
         statuses.push(cluster.local_status());
-        statuses.extend(cluster.statuses().await);
+        statuses.extend(cluster_statuses);
         statuses
     } else {
         vec![cluster.local_status()]

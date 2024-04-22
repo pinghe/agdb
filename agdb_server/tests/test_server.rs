@@ -4,6 +4,8 @@ use agdb_api::AgdbApi;
 use agdb_api::ReqwestClient;
 use anyhow::anyhow;
 use assert_cmd::prelude::*;
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Child;
@@ -18,6 +20,7 @@ const SERVER_DATA_DIR: &str = "agdb_server_data";
 const HOST: &str = "localhost";
 const DEFAULT_PORT: u16 = 3000;
 const ADMIN: &str = "admin";
+const CLUSTER_ADMIN: &str = "cluster_admin";
 const RETRY_TIMEOUT: Duration = Duration::from_secs(1);
 const RETRY_ATTEMPS: u16 = 3;
 const SHUTDOWN_RETRY_TIMEOUT: Duration = Duration::from_millis(100);
@@ -42,21 +45,31 @@ struct TestServerImpl {
     pub instances: u16,
 }
 
-impl TestServerImpl {
-    pub async fn with_config(mut config: HashMap<&str, serde_yaml::Value>) -> anyhow::Result<Self> {
-        let address = if let Some(address) = config.get("address") {
-            address
-                .as_str()
-                .ok_or_else(|| anyhow!("Invalid address"))?
-                .to_string()
-        } else {
-            let port = Self::next_port();
-            let address = format!("{HOST}:{port}");
-            config.insert("bind", address.to_owned().into());
-            config.insert("address", address.to_owned().into());
-            address
-        };
+#[derive(Deserialize, Serialize)]
+pub struct ClusterConfig {
+    pub(crate) local_address: String,
+    pub(crate) user: String,
+    pub(crate) password: String,
+    pub(crate) nodes: Vec<String>,
+}
 
+#[derive(Deserialize, Serialize)]
+pub struct Config {
+    pub(crate) bind: String,
+    pub(crate) admin: String,
+    pub(crate) data_dir: String,
+    pub(crate) cluster: ClusterConfig,
+}
+
+impl TestServerImpl {
+    pub async fn with_config(mut config: Config) -> anyhow::Result<Self> {
+        if config.cluster.local_address.is_empty() {
+            let port = Self::next_port();
+            config.bind = format!("{HOST}:{port}");
+            config.cluster.local_address = format!("http://{HOST}:{port}");
+        }
+
+        let address = config.cluster.local_address.clone();
         let dir = format!("{BINARY}.{}.test", address.split(':').last().unwrap());
         let data_dir = format!("{dir}/{SERVER_DATA_DIR}");
 
@@ -92,12 +105,18 @@ impl TestServerImpl {
     }
 
     pub async fn new() -> anyhow::Result<Self> {
-        let mut config = HashMap::<&str, serde_yaml::Value>::new();
-        config.insert("admin", ADMIN.into());
-        config.insert("data_dir", SERVER_DATA_DIR.into());
-        config.insert("cluster", Vec::<String>::new().into());
-
-        Self::with_config(config).await
+        Self::with_config(Config {
+            bind: String::new(),
+            admin: ADMIN.into(),
+            data_dir: SERVER_DATA_DIR.into(),
+            cluster: ClusterConfig {
+                local_address: String::new(),
+                user: CLUSTER_ADMIN.into(),
+                password: CLUSTER_ADMIN.into(),
+                nodes: vec![],
+            },
+        })
+        .await
     }
 
     pub fn next_port() -> u16 {

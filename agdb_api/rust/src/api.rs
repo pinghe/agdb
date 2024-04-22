@@ -1,7 +1,9 @@
 use crate::api_result::AgdbApiResult;
 use crate::api_types::DbType;
+use crate::api_types::Election;
 use crate::api_types::ServerDatabase;
 use crate::api_types::UserCredentials;
+use crate::api_types::Vote;
 use crate::http_client::HttpClient;
 use crate::ChangePassword;
 use crate::ClusterStatus;
@@ -488,6 +490,29 @@ impl<T: HttpClient> AgdbApi<T> {
                 &Some(ChangePassword {
                     password: old_password.to_string(),
                     new_password: new_pasword.to_string(),
+                }),
+                &self.token,
+            )
+            .await
+    }
+
+    pub async fn vote(
+        &self,
+        cluster_hash: u64,
+        term: u64,
+        log_hash: u64,
+        commit: u64,
+        commit_hash: u64,
+    ) -> AgdbApiResult<(u16, Vote)> {
+        self.client
+            .post(
+                &self.url("/cluster/vote"),
+                &Some(Election {
+                    cluster_hash,
+                    term,
+                    log_hash,
+                    commit,
+                    commit_hash,
                 }),
                 &self.token,
             )
