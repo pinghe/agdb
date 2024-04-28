@@ -64,7 +64,7 @@ struct Database {
 }
 
 #[derive(Clone, Copy, UserValue)]
-pub(crate) struct Cluster {
+pub(crate) struct ClusterInfo {
     pub(crate) db_id: Option<DbId>,
     pub(crate) term: u64,
     pub(crate) voted: u64,
@@ -101,7 +101,7 @@ impl DbPool {
                 t.exec_mut(&QueryBuilder::insert().index("username").query())?;
                 t.exec_mut(&QueryBuilder::insert().index("token").query())?;
 
-                let cluster = Cluster {
+                let cluster = ClusterInfo {
                     db_id: None,
                     term: 0,
                     voted: 0,
@@ -421,7 +421,7 @@ impl DbPool {
         })
     }
 
-    pub(crate) async fn cluster_info(&self) -> ServerResult<Cluster> {
+    pub(crate) async fn cluster_info(&self) -> ServerResult<ClusterInfo> {
         Ok(self
             .db()
             .await
@@ -429,7 +429,7 @@ impl DbPool {
             .try_into()?)
     }
 
-    pub(crate) async fn save_cluster_info(&self, cluster: &Cluster) -> ServerResult {
+    pub(crate) async fn save_cluster_info(&self, cluster: &ClusterInfo) -> ServerResult {
         self.db_mut()
             .await
             .exec_mut(&QueryBuilder::insert().element(cluster).query())?;
