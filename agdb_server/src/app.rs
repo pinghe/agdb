@@ -95,6 +95,7 @@ pub(crate) fn app(
             "/admin/db/:user/:db/user/:other/remove",
             routing::delete(routes::admin::db::user::remove),
         )
+        .route("/cluster/status", routing::get(routes::cluster::status))
         .route("/db/list", routing::get(routes::db::list))
         .route("/db/:user/:db/add", routing::post(routes::db::add))
         .route("/db/:user/:db/audit", routing::get(routes::db::audit))

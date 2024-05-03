@@ -43,12 +43,14 @@ pub struct ChangePassword {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema, PartialEq)]
-pub struct ClusterStatus {
+pub struct ServerStatus {
     pub address: String,
     pub cluster_hash: u64,
     pub leader: bool,
     pub term: u64,
+    pub log_hash: u64,
     pub commit: u64,
+    pub commit_hash: u64,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -223,12 +225,14 @@ mod tests {
         format!("{:?}", DbAudit(vec![]));
         format!(
             "{:?}",
-            ClusterStatus {
+            ServerStatus {
                 address: "localhost".to_string(),
                 cluster_hash: 0,
                 leader: false,
                 term: 0,
+                log_hash: 0,
                 commit: 0,
+                commit_hash: 0
             }
         );
         format!("{:?}", StatusParams { cluster: None });

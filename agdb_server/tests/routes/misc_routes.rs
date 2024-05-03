@@ -38,7 +38,7 @@ async fn status() -> anyhow::Result<()> {
     let server = TestServer::new().await?;
     let status = server.api.status().await?;
     assert_eq!(status.0, 200);
-    assert_eq!(status.1.len(), 1);
+    assert_eq!(status.1.log_hash, 0);
     Ok(())
 }
 

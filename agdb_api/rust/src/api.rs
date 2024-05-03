@@ -6,10 +6,10 @@ use crate::api_types::UserCredentials;
 use crate::api_types::Vote;
 use crate::http_client::HttpClient;
 use crate::ChangePassword;
-use crate::ClusterStatus;
 use crate::DbAudit;
 use crate::DbUser;
 use crate::DbUserRole;
+use crate::ServerStatus;
 use crate::UserLogin;
 use crate::UserStatus;
 use agdb::QueryResult;
@@ -441,16 +441,14 @@ impl<T: HttpClient> AgdbApi<T> {
             .await
     }
 
-    pub async fn status(&self) -> AgdbApiResult<(u16, Vec<ClusterStatus>)> {
+    pub async fn status(&self) -> AgdbApiResult<(u16, ServerStatus)> {
         self.client
-            .get::<Vec<ClusterStatus>>(&self.url("/status"), &None)
+            .get::<ServerStatus>(&self.url("/status"), &None)
             .await
     }
 
-    pub async fn status_cluster(&self) -> AgdbApiResult<(u16, Vec<ClusterStatus>)> {
-        self.client
-            .get(&self.url("/status?cluster=true"), &None)
-            .await
+    pub async fn cluster_status(&self) -> AgdbApiResult<(u16, Vec<ServerStatus>)> {
+        self.client.get(&self.url("/cluster/status"), &None).await
     }
 
     pub async fn user_login(&mut self, user: &str, password: &str) -> AgdbApiResult<u16> {

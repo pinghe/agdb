@@ -3,8 +3,8 @@ use crate::db_pool::DbPool;
 use crate::server_error::ServerResult;
 use agdb::StableHash;
 use agdb_api::AgdbApi;
-use agdb_api::ClusterStatus;
 use agdb_api::ReqwestClient;
+use agdb_api::ServerStatus;
 use agdb_api::Vote;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
@@ -20,7 +20,7 @@ type ClusterApi = AgdbApi<ReqwestClient>;
 
 pub(crate) struct ClusterNodeImpl {
     api: ClusterApi,
-    status: ClusterStatus,
+    status: ServerStatus,
 }
 
 type ClusterNode = Arc<RwLock<ClusterNodeImpl>>;
@@ -35,17 +35,22 @@ pub(crate) struct ClusterImpl {
 }
 
 impl ClusterImpl {
-    pub(crate) fn local_status(&self) -> ClusterStatus {
-        ClusterStatus {
+    pub(crate) async fn local_status(&self) -> ServerResult<ServerStatus> {
+        let commit = self.db_pool.log_info().await?;
+        let cluster_info = self.db_pool.cluster_info().await?;
+
+        Ok(ServerStatus {
             address: self.local_address.clone(),
             cluster_hash: self.hash,
-            leader: false,
-            term: 0,
-            commit: 0,
-        }
+            leader: cluster_info.leader == 1,
+            term: cluster_info.term,
+            log_hash: commit.hash,
+            commit: commit.commit,
+            commit_hash: commit.commit_hash,
+        })
     }
 
-    pub(crate) async fn statuses(&self) -> Vec<ClusterStatus> {
+    pub(crate) async fn statuses(&self) -> Vec<ServerStatus> {
         let mut statuses = Vec::with_capacity(self.nodes.len());
 
         for node in &self.nodes {
@@ -63,12 +68,14 @@ pub(crate) fn new(config: &Config, db_pool: DbPool) -> ServerResult<Cluster> {
         if node != &config.cluster.local_address {
             nodes.push(Arc::new(RwLock::new(ClusterNodeImpl {
                 api: ClusterApi::new(ReqwestClient::new(), node.as_str()),
-                status: ClusterStatus {
+                status: ServerStatus {
                     address: node.as_str().to_string(),
                     cluster_hash: 0,
                     leader: false,
+                    log_hash: 0,
                     term: 0,
                     commit: 0,
+                    commit_hash: 0,
                 },
             })));
         }
@@ -103,7 +110,7 @@ pub(crate) async fn cluster_status(cluster: Cluster) -> ServerResult {
         tasks.spawn(async move {
             let status = node.read().await.api.status().await;
             if let Ok((_, status)) = status {
-                node.write().await.status = status[0].clone();
+                node.write().await.status = status;
             }
         });
     }

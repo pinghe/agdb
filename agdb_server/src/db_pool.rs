@@ -67,6 +67,7 @@ struct Database {
 pub(crate) struct ClusterInfo {
     pub(crate) db_id: Option<DbId>,
     pub(crate) term: u64,
+    pub(crate) leader: u64,
     pub(crate) voted: u64,
 }
 
@@ -103,6 +104,7 @@ impl DbPool {
 
                 let cluster = ClusterInfo {
                     db_id: None,
+                    leader: 0,
                     term: 0,
                     voted: 0,
                 };
